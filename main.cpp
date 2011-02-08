@@ -1,5 +1,5 @@
 //#include <QtCore/QCoreApplication>
-//#include <QtDebug>
+#include <QtDebug>
 //#include <QVector>
 
 #include <vtkSphereSource.h>
@@ -9,6 +9,7 @@
 #include <vtkDataArray.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkRenderWindowInteractor.h>
+#include <vtkPLYReader.h>
 
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
@@ -22,6 +23,9 @@
 #include <vtkInteractorStyleTrackballCamera.h>
 #include <vtkGlyph3D.h>
 #include <vtkProperty.h>
+#include <vtkCellLocator.h>
+
+
 
 
 int main(int argc, char *argv[])
@@ -30,30 +34,58 @@ int main(int argc, char *argv[])
     //QCoreApplication a(argc, argv);
 
     //settings
-    double SEARCHLENGTH = 100.;   // half length of search line
+    double SEARCHLENGTH = 15;   // half length of search line
     double TOL = 0.001;           // bspTree tolerance
     char *name = "dist";
     bool DISPLAYNORMALS = false;
+    bool USESIMULATEDMESHES = false;
+    bool USECLOSESTPOINT = true;
+    char *scan1name = "banana4.ply";
+    char *scan2name = "banana3.ply";
 
     // Create source meshes
-    double res = 100.;
-    vtkSmartPointer<vtkSphereSource> meshA =
-            vtkSmartPointer<vtkSphereSource>::New();
-    meshA->SetRadius(10.);
-    meshA->SetCenter(0.,0.,0.);
-    meshA->SetThetaResolution(res);
-    meshA->SetPhiResolution(res);
-    meshA->Update();
-    vtkSmartPointer<vtkPolyData> polyA = meshA->GetOutput();
+    vtkSmartPointer<vtkPolyData> polyA =
+            vtkSmartPointer<vtkPolyData>::New();
+    vtkSmartPointer<vtkPolyData> polyB =
+            vtkSmartPointer<vtkPolyData>::New();
+    if(USESIMULATEDMESHES)
+    {
+        double res = 100.;
+        vtkSmartPointer<vtkSphereSource> meshA =
+                vtkSmartPointer<vtkSphereSource>::New();
+        meshA->SetRadius(10.);
+        meshA->SetCenter(0.,0.,0.);
+        meshA->SetThetaResolution(res);
+        meshA->SetPhiResolution(res);
+        meshA->Update();
+        polyA = meshA->GetOutput();
 
-    vtkSmartPointer<vtkSphereSource> meshB =
-            vtkSmartPointer<vtkSphereSource>::New();
-    meshB->SetRadius(11.);
-    meshB->SetCenter(1.,0.,0.);
-    meshB->SetThetaResolution(res);
-    meshB->SetPhiResolution(res);
-    meshB->Update();
-    vtkSmartPointer<vtkPolyData> polyB = meshB->GetOutput();
+        vtkSmartPointer<vtkSphereSource> meshB =
+                vtkSmartPointer<vtkSphereSource>::New();
+        meshB->SetRadius(11.);
+        meshB->SetCenter(1.,0.,0.);
+        meshB->SetThetaResolution(res);
+        meshB->SetPhiResolution(res);
+        meshB->Update();
+        polyB = meshB->GetOutput();
+    }
+    else
+    {
+        vtkSmartPointer<vtkPLYReader> reader =
+                vtkSmartPointer<vtkPLYReader>::New();
+        reader->SetFileName(scan1name);
+        reader->Update();
+
+        polyA->DeepCopy(reader->GetOutput());
+        polyA->Update();
+
+        reader->SetFileName(scan2name);
+        reader->Update();
+
+        polyB->DeepCopy(reader->GetOutput());
+        polyB->Update();
+
+    }
 
 
     // Calculate BSP tree
@@ -62,13 +94,20 @@ int main(int argc, char *argv[])
     bspTree->SetDataSet(polyB);
     bspTree->BuildLocator();
 
+
+    vtkSmartPointer<vtkCellLocator> cellLoc =
+            vtkSmartPointer<vtkCellLocator>::New();
+    cellLoc->SetDataSet(polyB);
+    cellLoc->BuildLocator();
+
+
     // Calculate meshA normals
     vtkSmartPointer<vtkPolyDataNormals> normals =
             vtkSmartPointer<vtkPolyDataNormals>::New();
     normals->SetInput(polyA);
     normals->ComputeCellNormalsOff();
     normals->ComputeCellNormalsOn();
-    normals->SplittingOff();
+    //normals->SplittingOff();
     normals->Update();
     vtkSmartPointer<vtkDataArray> normalData = normals->GetOutput()->GetPointData()->GetNormals();
 
@@ -76,6 +115,7 @@ int main(int argc, char *argv[])
     /*! Diff Calculation */
     //------------------------------------------------------------------------------------------------
     double normal[3];       //stores normal extracted for a single point
+    double normalLength;    //length of the normal, used to ensure that it is normalized
     double refPt[3];        //stores the current point on meshA
     double vectPtN[3];      //end point of search line in -'ve normal direction
     double vectPtP[3];      //end point of search line in +'ve normal direction
@@ -91,7 +131,7 @@ int main(int argc, char *argv[])
     double min = 1.e22;     //store min distance for scalarbar
 
     //QVector<double> *distVect = new QVector<double>();
-
+    vtkIdType a;
 
     // create array to store distances
     vtkSmartPointer<vtkDoubleArray> distArray =
@@ -100,40 +140,63 @@ int main(int argc, char *argv[])
     distArray->SetName(name);
     distArray->SetNumberOfValues(polyA->GetNumberOfPoints());
 
+
     // loop throug each point in meshA
     for(int ii = 0; ii < polyA->GetNumberOfPoints(); ii ++)
     {
+
+        if(int(float(ii)/float(polyA->GetNumberOfPoints())*100.) % 10 == 0)
+            qDebug() << ii;
         normalData->GetTuple(ii, normal);       //get normal at point
         polyA->GetPoint(ii, refPt);             //get point location
 
-        // Create end points for lines about the +'ve and -'ve direction of the point normal
-        vectPtN[0] = refPt[0] - SEARCHLENGTH * normal[0];
-        vectPtN[1] = refPt[1] - SEARCHLENGTH * normal[1];
-        vectPtN[2] = refPt[2] - SEARCHLENGTH * normal[2];
 
-        vectPtP[0] = refPt[0] + SEARCHLENGTH * normal[0];
-        vectPtP[1] = refPt[1] + SEARCHLENGTH * normal[1];
-        vectPtP[2] = refPt[2] + SEARCHLENGTH * normal[2];
-
-        // Check the intersection in the +'ve and -'ve directions: these must be seperated since bspTree returns the first intersection when
-        // traversing the line segment, which may not be the closest cell. This uses to line segments, both traversed from the point of interest.
-        // this then resutls in the closest intersection in both the +'ve and -'ve directions
-        intersectN = bspTree->IntersectWithLine(refPt, vectPtN, TOL, tN, x, pcoords, subId);
-        intersectP = bspTree->IntersectWithLine(refPt, vectPtP,TOL, tP, x, pcoords, subId);
-
-        // Logic to check for the closest intersection
-        if(intersectN == 0 && intersectP == 0)
-            dist = 0;                   //case of no intersection, I don't know how to handle this value should really be NaN
-        else if(intersectN == 0 && intersectP != 0)
-            dist = tP*SEARCHLENGTH;     //case of only an intersection in the +'ve direction
-        else if(intersectP == 0 && intersectN !=0 )
-            dist = -tN*SEARCHLENGTH;    //case of only an intersection in the -'ve direction
-        else                            //case of an intersection in both directions
+        if(!USECLOSESTPOINT)
         {
-            if(tN <= tP)                //find the closest interseection
-                dist = -tN*SEARCHLENGTH;
+            // Create end points for lines about the +'ve and -'ve direction of the point normal
+            normalLength = sqrt(normal[0]*normal[0] + normal[1]*normal[1] + normal[2]*normal[2]);
+            vectPtN[0] = refPt[0] - SEARCHLENGTH * normal[0]/normalLength;
+            vectPtN[1] = refPt[1] - SEARCHLENGTH * normal[1]/normalLength;
+            vectPtN[2] = refPt[2] - SEARCHLENGTH * normal[2]/normalLength;
+
+            vectPtP[0] = refPt[0] + SEARCHLENGTH * normal[0]/normalLength;
+            vectPtP[1] = refPt[1] + SEARCHLENGTH * normal[1]/normalLength;
+            vectPtP[2] = refPt[2] + SEARCHLENGTH * normal[2]/normalLength;
+
+            // Check the intersection in the +'ve and -'ve directions: these must be seperated since bspTree returns the first intersection when
+            // traversing the line segment, which may not be the closest cell. This uses to line segments, both traversed from the point of interest.
+            // this then resutls in the closest intersection in both the +'ve and -'ve directions
+            intersectN = bspTree->IntersectWithLine(refPt, vectPtN, TOL, tN, x, pcoords, subId);
+            intersectP = bspTree->IntersectWithLine(refPt, vectPtP,TOL, tP, x, pcoords, subId);
+
+            // Logic to check for the closest intersection
+            if(intersectN == 0 && intersectP == 0)
+                dist = 0;                   //case of no intersection, I don't know how to handle this value should really be NaN
+            else if(intersectN == 0 && intersectP != 0)
+                dist = tP*SEARCHLENGTH;     //case of only an intersection in the +'ve direction
+            else if(intersectP == 0 && intersectN !=0 )
+                dist = -tN*SEARCHLENGTH;    //case of only an intersection in the -'ve direction
+            else                            //case of an intersection in both directions
+            {
+                if(tN <= tP)                //find the closest interseection
+                    dist = -tN*SEARCHLENGTH;
+                else
+                    dist = tP*SEARCHLENGTH;
+            }
+
+
+        }
+        else
+        {
+            vtkMath::Normalize(normal);
+            vectPtP[0] = refPt[0] + normal[0]/normalLength;
+            vectPtP[1] = refPt[1] + normal[1]/normalLength;
+            vectPtP[2] = refPt[2] + normal[2]/normalLength;
+            cellLoc->FindClosestPoint(refPt,x,a,subId,dist);
+            if(vtkMath::Dot(vectPtP,x) >= 0)
+                dist = sqrt(dist);
             else
-                dist = tP*SEARCHLENGTH;
+                dist = -sqrt(dist);
         }
 
         // store the min and max values
@@ -145,7 +208,9 @@ int main(int argc, char *argv[])
         distArray->SetValue(ii,dist);   //set the distance to the array
         //distVect->append(dist);
 
+
     }
+
 
 //    qDebug() << *distVect;
 //    qDebug() << "(min, max) = " << min << max;
@@ -161,12 +226,14 @@ int main(int argc, char *argv[])
     vtkSmartPointer<vtkLookupTable> lookupTable =
             vtkSmartPointer<vtkLookupTable>::New();
     lookupTable->SetRange(min,max);
+    lookupTable->SetNumberOfColors(1000);
     lookupTable->Build();
 
     // create scalarbar
     vtkSmartPointer<vtkScalarBarActor> scalarBar =
             vtkSmartPointer<vtkScalarBarActor>::New();
     scalarBar->SetLookupTable(lookupTable);
+    scalarBar->SetMaximumNumberOfColors(1000);
     scalarBar->SetTitle("Mesh Distance");
 
 
@@ -198,6 +265,7 @@ int main(int argc, char *argv[])
     vtkSmartPointer<vtkActor> actorA =
             vtkSmartPointer<vtkActor>::New();
     actorA->SetMapper(mapperA);
+    //actorA->GetProperty()->LightingOff();;
 
     vtkSmartPointer<vtkActor> actorB =
             vtkSmartPointer<vtkActor>::New();
@@ -216,7 +284,7 @@ int main(int argc, char *argv[])
     renderer->AddActor(actorA);
     if(DISPLAYNORMALS)
         renderer->AddActor(normalActor);
-    renderer->AddActor(actorB);
+    //renderer->AddActor(actorB);
     renderer->AddActor2D(scalarBar);
 
 
