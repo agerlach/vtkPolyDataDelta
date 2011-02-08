@@ -183,6 +183,7 @@ int main(int argc, char *argv[])
     vtkSmartPointer<vtkPolyDataMapper> mapperA =
             vtkSmartPointer<vtkPolyDataMapper>::New();
     mapperA->SetInput(polyA);
+    mapperA->SetScalarRange(min,max);
     mapperA->SetLookupTable(lookupTable);
 
     vtkSmartPointer<vtkPolyDataMapper> mapperB =
