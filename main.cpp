@@ -24,6 +24,7 @@
 #include <vtkGlyph3D.h>
 #include <vtkProperty.h>
 #include <vtkCellLocator.h>
+#include <vtkCellData.h>
 
 
 
@@ -39,9 +40,10 @@ int main(int argc, char *argv[])
     char *name = "dist";
     bool DISPLAYNORMALS = false;
     bool USESIMULATEDMESHES = false;
-    bool USECLOSESTPOINT = true;
+    bool USEREVERSECHECK = true;
+    bool USECLOSESTPOINT = false;
     char *scan1name = "banana4.ply";
-    char *scan2name = "banana3.ply";
+    char *scan2name = "banana1.ply";
 
     // Create source meshes
     vtkSmartPointer<vtkPolyData> polyA =
@@ -94,6 +96,11 @@ int main(int argc, char *argv[])
     bspTree->SetDataSet(polyB);
     bspTree->BuildLocator();
 
+    vtkSmartPointer<vtkModifiedBSPTree> bspTreeCell =
+            vtkSmartPointer<vtkModifiedBSPTree>::New();
+    bspTreeCell->SetDataSet(polyA);
+    bspTreeCell->BuildLocator();
+
 
     vtkSmartPointer<vtkCellLocator> cellLoc =
             vtkSmartPointer<vtkCellLocator>::New();
@@ -105,33 +112,44 @@ int main(int argc, char *argv[])
     vtkSmartPointer<vtkPolyDataNormals> normals =
             vtkSmartPointer<vtkPolyDataNormals>::New();
     normals->SetInput(polyA);
-    normals->ComputeCellNormalsOff();
     normals->ComputeCellNormalsOn();
+    normals->ComputePointNormalsOn();
     //normals->SplittingOff();
     normals->Update();
     vtkSmartPointer<vtkDataArray> normalData = normals->GetOutput()->GetPointData()->GetNormals();
+    vtkSmartPointer<vtkDataArray> normalDataCell = normals->GetOutput()->GetCellData()->GetNormals();
 
 
     /*! Diff Calculation */
     //------------------------------------------------------------------------------------------------
     double normal[3];       //stores normal extracted for a single point
+    double normalCell[3];
     double normalLength;    //length of the normal, used to ensure that it is normalized
     double refPt[3];        //stores the current point on meshA
     double vectPtN[3];      //end point of search line in -'ve normal direction
     double vectPtP[3];      //end point of search line in +'ve normal direction
-    double x[3];            //intersection point on cell
+    double xP[3];            //intersection point on cell
+    double xN[3];
+    double x[3];
     double tP;              //length along +'ve search line
     double tN;              //length along -'ve search line
+    double tCell;
+
     double pcoords[3];
     int subId;
     int intersectP;         //check if intersection occured
     int intersectN;         //check if intersection occured
+    int intersectCell;         //check if intersection occured
     double dist;            //calculated distance for the current point on meshA to meshB
+    double distCell;
     double max = -1.e22;    //store max distance for scalarbar
     double min = 1.e22;     //store min distance for scalarbar
+    bool minAtP = false;
 
     //QVector<double> *distVect = new QVector<double>();
     vtkIdType a;
+    vtkIdType cellIdN;
+    vtkIdType cellIdP;
 
     // create array to store distances
     vtkSmartPointer<vtkDoubleArray> distArray =
@@ -148,6 +166,7 @@ int main(int argc, char *argv[])
         if(int(float(ii)/float(polyA->GetNumberOfPoints())*100.) % 10 == 0)
             qDebug() << ii;
         normalData->GetTuple(ii, normal);       //get normal at point
+        normalDataCell->GetTuple(ii,normalCell);
         polyA->GetPoint(ii, refPt);             //get point location
 
 
@@ -166,23 +185,60 @@ int main(int argc, char *argv[])
             // Check the intersection in the +'ve and -'ve directions: these must be seperated since bspTree returns the first intersection when
             // traversing the line segment, which may not be the closest cell. This uses to line segments, both traversed from the point of interest.
             // this then resutls in the closest intersection in both the +'ve and -'ve directions
-            intersectN = bspTree->IntersectWithLine(refPt, vectPtN, TOL, tN, x, pcoords, subId);
-            intersectP = bspTree->IntersectWithLine(refPt, vectPtP,TOL, tP, x, pcoords, subId);
+            intersectN = bspTree->IntersectWithLine(refPt, vectPtN, TOL, tN, xN, pcoords, subId,cellIdN);
+            intersectP = bspTree->IntersectWithLine(refPt, vectPtP,TOL, tP, xP, pcoords, subId, cellIdP);
 
             // Logic to check for the closest intersection
-            if(intersectN == 0 && intersectP == 0)
+            if(intersectN == 0 && intersectP == 0) {
                 dist = 0;                   //case of no intersection, I don't know how to handle this value should really be NaN
-            else if(intersectN == 0 && intersectP != 0)
+                minAtP = false;
+            }
+            else if(intersectN == 0 && intersectP != 0) {
                 dist = tP*SEARCHLENGTH;     //case of only an intersection in the +'ve direction
-            else if(intersectP == 0 && intersectN !=0 )
+                minAtP = true;
+            }
+            else if(intersectP == 0 && intersectN !=0 ) {
                 dist = -tN*SEARCHLENGTH;    //case of only an intersection in the -'ve direction
+                minAtP = false;
+            }
             else                            //case of an intersection in both directions
             {
-                if(tN <= tP)                //find the closest interseection
+                if(tN <= tP) {               //find the closest interseection
                     dist = -tN*SEARCHLENGTH;
-                else
+                    minAtP = false;
+                }
+                else {
                     dist = tP*SEARCHLENGTH;
+                    minAtP = true;
+                }
             }
+
+            if(USEREVERSECHECK) {
+                vtkMath::Normalize(normalCell);
+                if(minAtP) {
+                    vectPtN[0] = xP[0] - SEARCHLENGTH * normalCell[0];
+                    vectPtN[1] = xP[1] - SEARCHLENGTH * normalCell[1];
+                    vectPtN[2] = xP[2] - SEARCHLENGTH * normalCell[2];
+
+                    intersectCell = bspTreeCell->IntersectWithLine(xP, vectPtN, TOL, tCell, x, pcoords, subId);
+
+                    if(intersectCell != 0 && tCell < tP) {
+                        dist = tCell * SEARCHLENGTH;
+                    }
+                }
+                else{
+                    vectPtP[0] = xN[0] + SEARCHLENGTH * normalCell[0];
+                    vectPtP[1] = xN[1] + SEARCHLENGTH * normalCell[1];
+                    vectPtP[2] = xN[2] + SEARCHLENGTH * normalCell[2];
+
+                    intersectCell = bspTreeCell->IntersectWithLine(xN, vectPtP, TOL, tCell, x, pcoords, subId);
+
+                    if(intersectCell != 0 && tCell < tN) {
+                        dist = -tCell * SEARCHLENGTH;
+                    }
+                }
+            }
+
 
 
         }
