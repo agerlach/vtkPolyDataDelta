@@ -9,3 +9,5 @@ INCLUDE(${VTK_USE_FILE})
 ADD_EXECUTABLE(vtkPolyDataDeltaExample vtkPolyDataDeltaExample.cxx vtkPolyDataDelta.cxx)
 TARGET_LINK_LIBRARIES(vtkPolyDataDeltaExample vtkHybrid )
 
+ADD_EXECUTABLE(vtkPolyDataDeltaDemo vtkPolyDataDeltaDemo.cxx vtkPolyDataDelta.cxx)
+TARGET_LINK_LIBRARIES(vtkPolyDataDeltaDemo vtkHybrid )

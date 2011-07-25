@@ -1,1 +1,8 @@
-When two PolyDatas represent the same "object", it is informative to be able to compare them in a qualitative way. We do this by visualizing the difference between them by coloring the surface based on the "difference" between the PolyDatas. This distance is computed by "shooting" the normal of every point of PolyData A and finding its intersection on PolyData B. These distances are mapped to colors.
+When two PolyDatas represent the same "object", it is informative to be able to compare them in a qualitative way.
+We do this by visualizing the difference between them by coloring the surface based on the "difference" between
+the PolyDatas. This distance is computed by "shooting" the normal of every point of PolyData A and finding its
+intersection on PolyData B. These distances are mapped to colors.
+
+vtkPolyDataDeltaDemo programmatically creates two meshes and compares them.
+
+vtkPolyDataDeltaExample reads two meshes from vtp files and compares them.

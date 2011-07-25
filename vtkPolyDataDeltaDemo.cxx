@@ -17,41 +17,31 @@
 #include <vtkScalarBarActor.h>
 #include <vtkSmartPointer.h>
 #include <vtkSphereSource.h>
-#include <vtkXMLPolyDataReader.h>
 
 int main(int argc, char *argv[])
 {
-  // Verify arguments
-  if(argc < 3)
-    {
-    std::cerr << "Required arguments: mesh1.vtp mesh2.vtp" << std::endl;
-    return EXIT_SUCCESS;
-    }
+  // Create source meshes
+  int resolution = 50;
+  vtkSmartPointer<vtkSphereSource> meshSourceA =
+    vtkSmartPointer<vtkSphereSource>::New();
+  meshSourceA->SetRadius(10.);
+  meshSourceA->SetCenter(0.,0.,0.);
+  meshSourceA->SetThetaResolution(resolution);
+  meshSourceA->SetPhiResolution(resolution);
+  meshSourceA->Update();
 
-  // Parse arguments
-  std::string mesh1FileName = argv[1];
-  std::string mesh2FileName = argv[2];
-  
-  // Output arguments
-  std::cout << "Mesh1: " << mesh1FileName << std::endl;
-  std::cout << "Mesh2: " << mesh2FileName << std::endl;
-  
-  // Read the files
-  vtkSmartPointer<vtkXMLPolyDataReader> reader1 =
-    vtkSmartPointer<vtkXMLPolyDataReader>::New();
-  reader1->SetFileName(mesh1FileName.c_str());
-  reader1->Update();
-  
-  vtkSmartPointer<vtkXMLPolyDataReader> reader2 =
-    vtkSmartPointer<vtkXMLPolyDataReader>::New();
-  reader2->SetFileName(mesh1FileName.c_str());
-  reader2->Update();
-  
-  // Compare the meshes
+  vtkSmartPointer<vtkSphereSource> meshSourceB =
+    vtkSmartPointer<vtkSphereSource>::New();
+  meshSourceB->SetRadius(11.);
+  meshSourceB->SetCenter(1.,0.,0.);
+  meshSourceB->SetThetaResolution(resolution);
+  meshSourceB->SetPhiResolution(resolution);
+  meshSourceB->Update();
+
   vtkSmartPointer<vtkPolyDataDelta> polyDataDelta =
     vtkSmartPointer<vtkPolyDataDelta>::New();
-  polyDataDelta->SetInputConnection(0, reader1->GetOutputPort());
-  polyDataDelta->SetInputConnection(1, reader2->GetOutputPort());
+  polyDataDelta->SetInputConnection(0, meshSourceA->GetOutputPort());
+  polyDataDelta->SetInputConnection(1, meshSourceB->GetOutputPort());
   polyDataDelta->Update();
 
   // Create lookup table
@@ -72,24 +62,24 @@ int main(int argc, char *argv[])
   // Create normal glyph
   vtkSmartPointer<vtkGlyph3D> glyph =
     vtkSmartPointer<vtkGlyph3D>::New();
-  glyph->SetInput(polyDataDelta->GetOutput());
+  glyph->SetInputConnection(polyDataDelta->GetOutputPort());
   glyph->SetVectorModeToUseNormal();
   glyph->OrientOn();
 
   // Set to mappers
   vtkSmartPointer<vtkPolyDataMapper> mapperA =
     vtkSmartPointer<vtkPolyDataMapper>::New();
-  mapperA->SetInput(polyDataDelta->GetOutput());
+  mapperA->SetInputConnection(polyDataDelta->GetOutputPort());
   mapperA->SetScalarRange(range);
   mapperA->SetLookupTable(lookupTable);
 
   vtkSmartPointer<vtkPolyDataMapper> mapperB =
     vtkSmartPointer<vtkPolyDataMapper>::New();
-  mapperB->SetInputConnection(reader2->GetOutputPort());
+  mapperB->SetInput(meshSourceB->GetOutput());
 
   vtkSmartPointer<vtkPolyDataMapper> normalMapper =
     vtkSmartPointer<vtkPolyDataMapper>::New();
-  normalMapper->SetInputConnection(glyph->GetOutputPort());
+  normalMapper->SetInput(glyph->GetOutput());
 
   // Set to Actors
   vtkSmartPointer<vtkActor> actorA =
