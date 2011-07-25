@@ -23,7 +23,7 @@ int vtkPolyDataDelta::RequestData(
   vtkInformationVector **inputVector,
   vtkInformationVector *outputVector)
 {
-  // get the 2 input meshes
+  // Get the 2 input meshes
   vtkInformation *inInfo0 = inputVector[0]->GetInformationObject(0);
   vtkPolyData *meshA = vtkPolyData::SafeDownCast(
       inInfo0->Get(vtkDataObject::DATA_OBJECT()));
@@ -32,10 +32,10 @@ int vtkPolyDataDelta::RequestData(
   vtkPolyData *meshB = vtkPolyData::SafeDownCast(
       inInfo1->Get(vtkDataObject::DATA_OBJECT()));
 
-  // get the output
+  // Get the output
   vtkInformation *outInfo = outputVector->GetInformationObject(0);
   vtkPolyData *outputMesh = vtkPolyData::SafeDownCast(
-		  outInfo->Get(vtkDataObject::DATA_OBJECT()));
+               outInfo->Get(vtkDataObject::DATA_OBJECT()));
   outputMesh->ShallowCopy(meshA);
 
   // Calculate BSP tree
@@ -53,7 +53,6 @@ int vtkPolyDataDelta::RequestData(
   normals->SplittingOff();
   normals->Update();
   vtkSmartPointer<vtkDataArray> normalData = normals->GetOutput()->GetPointData()->GetNormals();
-
 
   /*! Diff Calculation */
   //------------------------------------------------------------------------------------------------
