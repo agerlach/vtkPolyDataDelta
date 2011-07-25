@@ -21,8 +21,7 @@
 int main(int argc, char *argv[])
 {
   // Create source meshes
-  //double resolution = 100.;
-  double resolution = 50.;
+  int resolution = 50;
   vtkSmartPointer<vtkSphereSource> meshSourceA =
     vtkSmartPointer<vtkSphereSource>::New();
   meshSourceA->SetRadius(10.);
